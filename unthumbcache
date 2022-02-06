@@ -1,0 +1,75 @@
+#!/usr/bin/env python
+
+# inspired from https://github.com/thumbcacheviewer/thumbcacheviewer
+
+# reading thumbcache_xx.db from /dev/stdin
+import sys
+#  '=' is used in struct.unpack to avoid padding
+import struct
+from hashlib import md5
+
+# read first 12 bytes
+data = sys.stdin.buffer.read(3*4)
+db_magic, db_version, db_type, = struct.unpack('=4sII', data)
+
+if db_magic == b'CMMM' :
+
+    # cache entry structure depending on Windows version
+    if db_version == 0x14 : cache_entry_struct = '=4sIQ5I2Q' # Windows Vista
+    elif db_version == 0x15 : cache_entry_struct = '=4sIQ4I2Q' # Windows 7
+    elif db_version in (0x1A, 0x1C, 0x1E, 0x1F, 0x20) : cache_entry_struct = '=4sIQ6I2Q' # Windows 8, 8', 8", 8.1 && 10
+    else : sys.exit(f'unsupported db version {db_version} ({hex(db_version)})')
+
+    # read next 12 or 16 (Windows 8") bytes
+    sys.stdin.buffer.read((db_version == 0x1C and 4 or 3)*4)
+
+    cache_entry_struct_size = struct.calcsize(cache_entry_struct)
+
+    # read next 4 bytes (eg. 4s in cache_entry_struct)
+    data = sys.stdin.buffer.read(1*4)
+    while data :
+
+        cache_entry_magic, = struct.unpack('=4s', data)
+        if cache_entry_magic == b'CMMM' :
+
+            # read next bytes to fill cache entry size (eg. 44, 48 or 52 bytes)
+            data = sys.stdin.buffer.read(cache_entry_struct_size - 1*4)
+
+            # first 4 bytes give the cache entry size
+            cache_entry_size, = struct.unpack('=I', data[:4])
+
+            # Vista or not Vista
+            if db_version != 0x14: filename_size, padding_size, data_size, = struct.unpack('=3I', data[12:24])
+            else: filename_ext, filename_size, padding_size, data_size, = struct.unpack('=4s3I', data[12:28])
+
+            # check and jump to data
+            if filename_size or padding_size : data = sys.stdin.buffer.read(filename_size + padding_size)
+
+            if data_size :
+
+                data = sys.stdin.buffer.read(data_size)
+
+                if data:
+
+                    # set file extension
+                    if data.startswith(b'\x42\x4D') : filename_ext = '.bmp'
+                    elif data.startswith(b'\xFF\xD8\xFF\xE0') : filename_ext = '.jpg'
+                    elif data.startswith(b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A') : filename_ext = '.png'
+                    elif file_version == 0x14 : filename_ext = filename_ext.lower()
+                    else : filename_ext = ".???"
+
+                    # md5 avoids having the same thumbnail several times
+                    filename_name = md5(data).hexdigest()
+                    handle = open(filename_name + filename_ext, 'wb')
+                    handle.write(data)
+                    handle.close()
+
+            # read next entry
+            data = sys.stdin.buffer.read(4)
+
+        else :
+
+            # 4 bytes readed was not CMMM
+            while data and data != b'CMMM' : data = data[1:] + sys.stdin.buffer.read(1)
+
+else : sys.exit(f'bad magic ({db_magic})')
