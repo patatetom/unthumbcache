@@ -6,7 +6,7 @@
 import sys
 #  '=' is used in struct.unpack to avoid padding
 import struct
-from hashlib import md5
+from hashlib import sha1
 
 # read first 12 bytes
 data = sys.stdin.buffer.read(3*4)
@@ -58,8 +58,8 @@ if db_magic == b'CMMM' :
                     elif file_version == 0x14 : filename_ext = filename_ext.lower()
                     else : filename_ext = ".???"
 
-                    # md5 avoids having the same thumbnail several times
-                    filename_name = md5(data).hexdigest()
+                    # sha1 avoids having the same thumbnail several times
+                    filename_name = sha1(data).hexdigest()
                     handle = open(filename_name + filename_ext, 'wb')
                     handle.write(data)
                     handle.close()
